@@ -594,20 +594,26 @@ export class CopilotAgent extends Disposable implements IAgent {
 		this._logService.info('[Copilot] Listing models...');
 		const client = await this._ensureClient();
 		const models = await client.listModels();
-		const result = models.map((m): IAgentModelInfo => ({
-			provider: this.id,
-			id: m.id,
-			name: m.name,
-			// Synthetic SDK entries like `auto` ship with `capabilities: {}` and
-			// no fixed context window — surface them with maxContextWindow undefined.
-			maxContextWindow: m.capabilities?.limits?.max_context_window_tokens,
-			supportsVision: !!m.capabilities?.supports?.vision,
-			configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
-			policyState: m.policy?.state as PolicyState | undefined,
-			_meta: typeof m.billing?.multiplier === 'number' ? {
-				multiplierNumeric: m.billing.multiplier,
-			} : undefined,
-		}));
+		const result = models.map((m): IAgentModelInfo => {
+			// Synthetic SDK entries like `auto` ship with no fixed context
+			// window — the SDK may surface this as either undefined or 0;
+			// normalize to undefined so consumers can rely on the value
+			// being either a positive number or absent.
+			const rawMaxContextWindow = m.capabilities?.limits?.max_context_window_tokens;
+			const maxContextWindow = typeof rawMaxContextWindow === 'number' && rawMaxContextWindow > 0 ? rawMaxContextWindow : undefined;
+			return {
+				provider: this.id,
+				id: m.id,
+				name: m.name,
+				maxContextWindow,
+				supportsVision: !!m.capabilities?.supports?.vision,
+				configSchema: this._createThinkingLevelConfigSchema(m.supportedReasoningEfforts, m.defaultReasoningEffort),
+				policyState: m.policy?.state as PolicyState | undefined,
+				_meta: typeof m.billing?.multiplier === 'number' ? {
+					multiplierNumeric: m.billing.multiplier,
+				} : undefined,
+			};
+		});
 		this._logService.info(`[Copilot] Found ${result.length} models`);
 		return result;
 	}
